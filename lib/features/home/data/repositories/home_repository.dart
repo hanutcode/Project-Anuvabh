@@ -1,102 +1,61 @@
-import '../../../../core/theme/app_colors.dart';
-import '../models/featured_activity.dart';
-import '../models/game.dart';
-import '../models/lesson_stage.dart';
-import '../models/quick_stat.dart';
-import '../models/subject.dart';
+import 'dart:convert';
 
-/// Static content for the home screen (same data as `src/routes/index.tsx`).
-/// Swap this for an API-backed implementation later without touching the UI.
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+
+class ApiException implements Exception {
+  const ApiException(this.statusCode, this.message);
+  final int statusCode;
+  final String message;
+  @override
+  String toString() => message;
+}
+
 class HomeRepository {
-  const HomeRepository();
+  HomeRepository({http.Client? client, String? baseUrl})
+    : _client = client ?? http.Client(),
+      _baseUrl =
+          baseUrl ??
+          const String.fromEnvironment('API_BASE_URL', defaultValue: '');
+  final http.Client _client;
+  final String _baseUrl;
 
-  FeaturedActivity getTodaysPeriod() => const FeaturedActivity(
-    badge: "Today's period",
-    title: 'Motion Bingo',
-    description:
-        'Students already know Bingo — so the period goes to speed, velocity and acceleration.',
-    minutes: 45,
-  );
+  Future<Map<String, dynamic>> request(
+    String method,
+    String path, [
+    Map<String, dynamic>? data,
+  ]) async {
+    final base = _baseUrl.isNotEmpty
+        ? _baseUrl
+        : (kIsWeb ? Uri.base.origin : 'http://127.0.0.1:8080');
+    final uri = Uri.parse('$base/api/$path');
+    final request = http.Request(method, uri);
+    request.headers['Content-Type'] = 'application/json';
+    if (data != null) request.body = jsonEncode(data);
+    try {
+      final streamed = await _client
+          .send(request)
+          .timeout(const Duration(seconds: 15));
+      final response = await http.Response.fromStream(streamed)
+          .timeout(const Duration(seconds: 15));
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode >= 400) {
+        throw ApiException(
+          response.statusCode,
+          body['error'] ?? 'Request failed.',
+        );
+      }
+      return body;
+    } on FormatException {
+      throw Exception(
+        'The data service is unavailable. Start the local app server and retry.',
+      );
+    } on http.ClientException {
+      throw Exception(
+        'Cannot connect to the app server. Check your connection and retry.',
+      );
+    }
+  }
 
-  List<QuickStat> getQuickStats() => const [
-    QuickStat(value: '12', label: 'Games ready'),
-    QuickStat(value: '3', label: 'Subjects'),
-    QuickStat(value: '0', label: 'Devices needed'),
-  ];
-
-  List<Subject> getSubjects() => Subject.values;
-
-  List<Game> getGames() => const [
-    Game(
-      title: 'Motion Bingo',
-      subject: Subject.physics,
-      base: 'Bingo',
-      tone: AppColors.lilac,
-      minutes: 45,
-    ),
-    Game(
-      title: 'Vector Estimation Relay',
-      subject: Subject.physics,
-      base: 'Relay',
-      tone: AppColors.butter,
-      minutes: 40,
-    ),
-    Game(
-      title: 'Gravitation Guess Who',
-      subject: Subject.physics,
-      base: 'Guess Who',
-      tone: AppColors.mint,
-      minutes: 45,
-    ),
-    Game(
-      title: 'Energy Dominoes',
-      subject: Subject.physics,
-      base: 'Dominoes',
-      tone: AppColors.blush,
-      minutes: 40,
-    ),
-    Game(
-      title: 'Periodic Table Battleship',
-      subject: Subject.chemistry,
-      base: 'Battleship',
-      tone: AppColors.sage,
-      minutes: 45,
-    ),
-    Game(
-      title: 'Compound Rummy',
-      subject: Subject.chemistry,
-      base: 'Rummy',
-      tone: AppColors.cream,
-      minutes: 40,
-    ),
-    Game(
-      title: 'Polynomial Snap',
-      subject: Subject.maths,
-      base: 'Snap',
-      tone: AppColors.butter,
-      minutes: 40,
-    ),
-    Game(
-      title: 'Proof Jigsaw Relay',
-      subject: Subject.maths,
-      base: 'Jigsaw',
-      tone: AppColors.lilac,
-      minutes: 45,
-    ),
-  ];
-
-  List<LessonStage> getStages() => const [
-    LessonStage(number: '01', name: 'Open', note: 'Hook the concept in 5 min'),
-    LessonStage(number: '02', name: 'Set up', note: 'Teams, roles, cards out'),
-    LessonStage(number: '03', name: 'Play', note: 'Rounds with trap questions'),
-    LessonStage(number: '04', name: 'Close', note: 'Score with justification'),
-    LessonStage(number: '05', name: 'Reflect', note: 'Name the misconception'),
-  ];
-
-  List<String> getRoles() => const [
-    'Recorder',
-    'Runner',
-    'Checker',
-    'Challenger',
-  ];
+  void dispose() => _client.close();
 }

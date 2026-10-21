@@ -46,3 +46,9 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Project-local development tools
+/.local/
+
+/server/data/
+__pycache__/

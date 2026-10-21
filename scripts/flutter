@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+export PUB_CACHE="$PROJECT_ROOT/.local/pub-cache"
+exec "$PROJECT_ROOT/.local/flutter/bin/flutter" "$@"

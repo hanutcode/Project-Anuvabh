@@ -1,0 +1,101 @@
+{
+  "games": [
+    {
+      "title": "Motion Bingo",
+      "subject": "physics",
+      "base": "Bingo",
+      "tone": 4291806705,
+      "minutes": 45,
+      "description": "Students already know Bingo \u2014 so the period goes to speed, velocity and acceleration."
+    },
+    {
+      "title": "Vector Estimation Relay",
+      "subject": "physics",
+      "base": "Relay",
+      "tone": 4293974939,
+      "minutes": 40,
+      "description": "Teach physics through Relay. Set up teams, explain the rules, play a round and reflect on the concept."
+    },
+    {
+      "title": "Gravitation Guess Who",
+      "subject": "physics",
+      "base": "Guess Who",
+      "tone": 4290504922,
+      "minutes": 45,
+      "description": "Teach physics through Guess Who. Set up teams, explain the rules, play a round and reflect on the concept."
+    },
+    {
+      "title": "Energy Dominoes",
+      "subject": "physics",
+      "base": "Dominoes",
+      "tone": 4294693839,
+      "minutes": 40,
+      "description": "Teach physics through Dominoes. Set up teams, explain the rules, play a round and reflect on the concept."
+    },
+    {
+      "title": "Periodic Table Battleship",
+      "subject": "chemistry",
+      "base": "Battleship",
+      "tone": 4290697406,
+      "minutes": 45,
+      "description": "Teach chemistry through Battleship. Set up teams, explain the rules, play a round and reflect on the concept."
+    },
+    {
+      "title": "Compound Rummy",
+      "subject": "chemistry",
+      "base": "Rummy",
+      "tone": 4294702828,
+      "minutes": 40,
+      "description": "Teach chemistry through Rummy. Set up teams, explain the rules, play a round and reflect on the concept."
+    },
+    {
+      "title": "Polynomial Snap",
+      "subject": "maths",
+      "base": "Snap",
+      "tone": 4293974939,
+      "minutes": 40,
+      "description": "Teach maths through Snap. Set up teams, explain the rules, play a round and reflect on the concept."
+    },
+    {
+      "title": "Proof Jigsaw Relay",
+      "subject": "maths",
+      "base": "Jigsaw",
+      "tone": 4291806705,
+      "minutes": 45,
+      "description": "Teach maths through Jigsaw. Set up teams, explain the rules, play a round and reflect on the concept."
+    }
+  ],
+  "stages": [
+    {
+      "number": "01",
+      "name": "Open",
+      "note": "Hook the concept in 5 min"
+    },
+    {
+      "number": "02",
+      "name": "Set up",
+      "note": "Teams, roles, cards out"
+    },
+    {
+      "number": "03",
+      "name": "Play",
+      "note": "Rounds with trap questions"
+    },
+    {
+      "number": "04",
+      "name": "Close",
+      "note": "Score with justification"
+    },
+    {
+      "number": "05",
+      "name": "Reflect",
+      "note": "Name the misconception"
+    }
+  ],
+  "roles": [
+    "Recorder",
+    "Runner",
+    "Checker",
+    "Challenger"
+  ]
+}

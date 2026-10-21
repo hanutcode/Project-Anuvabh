@@ -21,7 +21,7 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final home = context.read<HomeProvider>();
+    final home = context.watch<HomeProvider>();
     final insets = MediaQuery.paddingOf(context);
 
     return Stack(

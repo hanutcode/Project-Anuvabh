@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../../manage/dashboard_pages.dart';
+import '../providers/home_provider.dart';
+
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../../core/constants/app_assets.dart';
@@ -91,7 +96,16 @@ class TodaysPeriodCard extends StatelessWidget {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Pressable(
-                        onTap: () {},
+                        onTap: () {
+                          final game = context
+                              .read<HomeProvider>()
+                              .featuredGame;
+                          if (game != null) {
+                            startActivity(context, game);
+                          } else {
+                            editGame(context);
+                          }
+                        },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 16,

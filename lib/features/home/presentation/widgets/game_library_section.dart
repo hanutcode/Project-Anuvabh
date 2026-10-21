@@ -8,6 +8,9 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/pressable.dart';
 import '../providers/home_provider.dart';
 import 'game_list_tile.dart';
+import '../../../manage/dashboard_pages.dart';
+import '../../../shell/data/models/app_tab.dart';
+import '../../../shell/presentation/providers/bottom_nav_provider.dart';
 import 'section_title.dart';
 import 'subject_filter_chips.dart';
 
@@ -30,7 +33,8 @@ class GameLibrarySection extends StatelessWidget {
             children: [
               const Flexible(child: SectionTitle('Game library')),
               Pressable(
-                onTap: () {},
+                onTap: () =>
+                    context.read<BottomNavProvider>().select(AppTab.games),
                 child: Row(
                   children: [
                     Text(
@@ -65,9 +69,20 @@ class GameLibrarySection extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (games.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text(
+                    'No games found. Add a game or try another search.',
+                  ),
+                ),
               for (var i = 0; i < games.length; i++) ...[
                 if (i > 0) const SizedBox(height: 12),
-                GameListTile(key: ValueKey(games[i].title), game: games[i]),
+                GameListTile(
+                  key: ValueKey(games[i].id),
+                  game: games[i],
+                  onTap: () => gameDetails(context, games[i]),
+                ),
               ],
             ],
           ),

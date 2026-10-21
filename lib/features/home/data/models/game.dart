@@ -4,6 +4,8 @@ import 'subject.dart';
 
 class Game {
   const Game({
+    this.id = 0,
+    this.description = '',
     required this.title,
     required this.subject,
     required this.base,
@@ -11,6 +13,8 @@ class Game {
     required this.minutes,
   });
 
+  final int id;
+  final String description;
   final String title;
   final Subject subject;
 

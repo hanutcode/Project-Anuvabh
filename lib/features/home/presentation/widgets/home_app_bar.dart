@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/home_provider.dart';
+import '../../../shell/data/models/app_tab.dart';
+import '../../../shell/presentation/providers/bottom_nav_provider.dart';
+
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../../core/constants/app_constants.dart';
@@ -37,7 +43,7 @@ class HomeAppBar extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'Namaste, Teacher',
+                      'Namaste, ${context.watch<HomeProvider>().teacherName}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.body(
@@ -58,14 +64,18 @@ class HomeAppBar extends StatelessWidget {
                   ],
                 ),
               ),
-              const _CircleIconButton(
+              _CircleIconButton(
+                onTap: () =>
+                    context.read<BottomNavProvider>().select(AppTab.games),
                 icon: LucideIcons.search300,
                 semanticLabel: 'Search games',
               ),
               const SizedBox(width: 8),
-              const _CircleIconButton(
+              _CircleIconButton(
+                onTap: () =>
+                    context.read<BottomNavProvider>().select(AppTab.classroom),
                 icon: LucideIcons.bell300,
-                semanticLabel: 'Notifications',
+                semanticLabel: 'Activity history',
               ),
             ],
           ),
@@ -76,8 +86,13 @@ class HomeAppBar extends StatelessWidget {
 }
 
 class _CircleIconButton extends StatelessWidget {
-  const _CircleIconButton({required this.icon, required this.semanticLabel});
+  const _CircleIconButton({
+    required this.icon,
+    required this.semanticLabel,
+    required this.onTap,
+  });
 
+  final VoidCallback onTap;
   final IconData icon;
   final String semanticLabel;
 
@@ -85,7 +100,7 @@ class _CircleIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Pressable(
       semanticLabel: semanticLabel,
-      onTap: () {},
+      onTap: onTap,
       child: Container(
         width: 40,
         height: 40,

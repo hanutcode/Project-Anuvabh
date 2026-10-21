@@ -1,17 +1,43 @@
-# project_anubhav
+# Project Anubhav
 
-A new Flutter project.
+A Flutter classroom activity app with a Python API and SQLite database.
 
-## Getting Started
+Features include account registration, login/logout, a searchable game library,
+class management, activity history, and teacher profiles. New accounts use exactly
+six-digit passwords. Each account has its own games, classes and history.
 
-This project is a starting point for a Flutter application.
+## Run locally
 
-A few resources to get you started if this is your first Flutter project:
+Install Flutter 3.47 or later with Dart 3.13.2 or later, and Python 3 with SQLite support.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```sh
+flutter pub get
+flutter build web --no-wasm-dry-run
+python3 server/app.py
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Open http://127.0.0.1:8080. Create your account from the login screen; there are no
+default credentials. Log out from the Me tab.
+
+The database is created automatically at `server/data/anubhav.sqlite3` and is not
+tracked in Git. Existing data is preserved by database migrations; the first account
+claims data created before accounts were introduced.
+
+## Validate
+
+```sh
+python3 -m unittest discover -s server -p 'test_*.py'
+flutter analyze
+flutter test
+flutter build web --no-wasm-dry-run
+```
+
+See [LOCAL_SETUP.md](LOCAL_SETUP.md) for local tooling, database backups, API details
+and session behavior.
+
+## Hosting
+
+The app requires its Python API and a persistent SQLite database. GitHub Pages alone
+cannot run the backend. The included server is for local development and listens on
+127.0.0.1. Remote hosting requires a production server, HTTPS, and Secure session
+cookies; see the deployment notes in LOCAL_SETUP.md.
