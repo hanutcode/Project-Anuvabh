@@ -6,6 +6,7 @@ import json
 import re
 import secrets
 import time
+import os
 from pathlib import Path
 
 ITERATIONS = 600_000
@@ -41,7 +42,7 @@ def cookie_token(headers):
 
 
 def current_user(db, headers):
-    token = cookie_token(headers)
+    token = session_token(headers)
     if not token or len(token) > 200:
         return None
     row = db.execute('''SELECT users.id,users.email FROM auth_sessions
@@ -51,8 +52,7 @@ def current_user(db, headers):
 
 
 def cookie(token='', expire=False):
-    # This server binds to HTTP loopback only. HTTPS deployment must add Secure.
-    return f'anubhav_session={token}; Path=/api; HttpOnly; SameSite=Strict; Max-Age={0 if expire else SESSION_SECONDS}'
+    return f'anubhav_session={token}; Path=/api; HttpOnly; SameSite=Strict; Max-Age={0 if expire else SESSION_SECONDS}' + ('; Secure' if os.environ.get('APP_ENV') == 'production' else '')
 
 
 def migrate(db):
@@ -79,12 +79,14 @@ def register(db, data, root):
         raise ValueError('Password must be exactly 6 digits.')
     if db.execute('SELECT id FROM users WHERE email=?', (email,)).fetchone():
         raise ValueError('An account already uses this email. Please log in.')
-    first = db.execute('SELECT count(*) FROM users').fetchone()[0] == 0
+    first = db.execute('SELECT count(*) FROM users').fetchone()[0] == 0 and not db.execute("SELECT 1 FROM settings WHERE key='__legacy_claimed'").fetchone()
     user_id = db.execute('INSERT INTO users(email,password_hash) VALUES(?,?)', (email, hash_password(password))).lastrowid
     if first:
         for table in ('games', 'classes', 'sessions'):
             db.execute(f'UPDATE {table} SET user_id=? WHERE user_id IS NULL', (user_id,))
-        db.execute('INSERT INTO account_settings SELECT ?,key,value FROM settings', (user_id,))
+        db.execute("INSERT INTO account_settings SELECT ?,key,value FROM settings WHERE key NOT LIKE '__legacy_%'", (user_id,))
+        db.execute('DELETE FROM settings')
+        db.execute("INSERT INTO settings VALUES('__legacy_claimed',?)", (str(user_id),))
     else:
         seed = json.loads((Path(root) / 'server/seed.json').read_text())
         featured = ''
@@ -104,3 +106,26 @@ def credentials(data):
     if not isinstance(password, str) or not 1 <= len(password) <= 128:
         raise ValueError('Enter a password of up to 128 characters.')
     return email.strip().lower(), password
+
+
+def session_token(headers):
+    authorization = headers.get('Authorization', '')
+    return authorization[7:] if authorization.startswith('Bearer ') else cookie_token(headers)
+
+
+def delete_account(db, user_id, db_path):
+    user = db.execute('SELECT email FROM users WHERE id=?', (user_id,)).fetchone()
+    if not user:
+        raise ValueError('Account no longer exists.')
+    for table in ('sessions', 'classes', 'games', 'account_settings', 'auth_sessions'):
+        db.execute(f'DELETE FROM {table} WHERE user_id=?', (user_id,))
+    db.execute('DELETE FROM auth_attempts WHERE email=?', (user['email'],))
+    claimed = db.execute("SELECT value FROM settings WHERE key='__legacy_claimed'").fetchone()
+    # Legacy database/profile copies belong to the first account. Remove them
+    # on deletion, without touching another account's active records.
+    first_id = db.execute('SELECT min(id) FROM users').fetchone()[0]
+    if (claimed and claimed[0] == str(user_id)) or (not claimed and first_id == user_id):
+        Path(str(db_path) + '.pre-auth-backup').unlink(missing_ok=True)
+        db.execute('DELETE FROM settings')
+        db.execute("INSERT INTO settings VALUES('__legacy_claimed','deleted')")
+    db.execute('DELETE FROM users WHERE id=?', (user_id,))

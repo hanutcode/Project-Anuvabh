@@ -7,6 +7,8 @@ from pathlib import Path
 import sqlite3
 import secrets
 import time
+import os
+from html import escape
 import auth
 from urllib.parse import urlsplit
 
@@ -17,6 +19,7 @@ def connect(path):
     db = sqlite3.connect(path, timeout=10)
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA foreign_keys = ON')
+    db.execute('PRAGMA secure_delete = ON')
     return db
 
 
@@ -73,6 +76,14 @@ def snapshot(db, user):
                 settings=dict(db.execute('SELECT key,value FROM account_settings WHERE user_id=?', (user['id'],))))
 
 
+def legal_content():
+    content = json.loads((ROOT / 'server/public/privacy.json').read_text())
+    content['developer'] = os.environ.get('DEVELOPER_NAME', '')
+    content['support_email'] = os.environ.get('SUPPORT_EMAIL', '')
+    content['configured'] = bool(content['developer'] and content['support_email'])
+    return content
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT / 'build/web'), **kwargs)
@@ -96,14 +107,21 @@ class Handler(SimpleHTTPRequestHandler):
 
     def local_host(self):
         try:
-            return urlsplit('http://' + self.headers.get('Host', '')).hostname in ('127.0.0.1', 'localhost')
+            return urlsplit('http://' + self.headers.get('Host', '')).hostname in os.environ.get('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
         except ValueError:
             return False
 
     def do_GET(self):
         if not self.local_host():
             return self.reply(403, {'error': 'Use the local app address.'})
-        if urlsplit(self.path).path == '/api/state':
+        path = urlsplit(self.path).path
+        if path in ('/privacy', '/delete-account'):
+            return self.legal_page(path)
+        if path == '/api/legal':
+            return self.reply(200, legal_content())
+        if path == '/health':
+            return self.reply(200, {'status': 'ok'})
+        if path == '/api/state':
             with closing(connect(self.server.db_path)) as db:
                 user = auth.current_user(db, self.headers)
                 if not user:
@@ -118,7 +136,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self.reply(403, {'error': 'Use the local app address.'})
         # Browser requests are same-origin. Reject foreign form/script submissions.
         origin = self.headers.get('Origin')
-        if origin and origin != 'http://' + self.headers.get('Host', ''):
+        if origin and origin != os.environ.get('PUBLIC_ORIGIN', 'http://' + self.headers.get('Host', '')):
             return self.reply(403, {'error': 'Use the app from this server.'})
         if self.headers.get('Content-Type', '').split(';')[0].strip() != 'application/json':
             return self.reply(415, {'error': 'Send JSON from the app.'})
@@ -213,7 +231,29 @@ class Handler(SimpleHTTPRequestHandler):
             action = urlsplit(self.path).path.rsplit('/', 1)[-1]
             with closing(connect(self.server.db_path)) as db, db:
                 if action == 'logout':
-                    db.execute('DELETE FROM auth_sessions WHERE token_hash=?', (auth.token_hash(auth.cookie_token(self.headers)),))
+                    db.execute('DELETE FROM auth_sessions WHERE token_hash=?', (auth.token_hash(auth.session_token(self.headers)),))
+                    result, session_cookie = {'ok': True}, auth.cookie(expire=True)
+                elif action == 'delete-account':
+                    user = auth.current_user(db, self.headers)
+                    if not user:
+                        return self.reply(401, {'error': 'Please log in before deleting your account.'})
+                    password = data.get('password', '')
+                    if not isinstance(password, str) or len(password) > 128:
+                        raise ValueError('Enter your current password.')
+                    now = int(time.time())
+                    db.execute('DELETE FROM auth_attempts WHERE attempted_at<?', (now - 900,))
+                    attempts = db.execute('SELECT count(*) FROM auth_attempts WHERE email=?', (user['email'],)).fetchone()[0]
+                    if attempts >= 10:
+                        return self.reply(429, {'error': 'Too many attempts. Please try again in 15 minutes.'})
+                    db.execute('INSERT INTO auth_attempts VALUES(?,?,?)', (self.client_address[0], user['email'], now))
+                    db.commit()
+                    db.execute('BEGIN IMMEDIATE')
+                    row = db.execute('SELECT password_hash FROM users WHERE id=?', (user['id'],)).fetchone()
+                    if not row or not auth.verify_password(password, row['password_hash']):
+                        return self.reply(400, {'error': 'Password is incorrect. Your account has not been deleted.'})
+                    if data.get('confirmation') != 'DELETE':
+                        raise ValueError('Confirm account deletion by typing DELETE.')
+                    auth.delete_account(db, user['id'], self.server.db_path)
                     result, session_cookie = {'ok': True}, auth.cookie(expire=True)
                 elif action in ('register', 'login'):
                     email, password = auth.credentials(data)
@@ -236,12 +276,14 @@ class Handler(SimpleHTTPRequestHandler):
                             return self.reply(401, {'error': 'Email or password is incorrect.'})
                         user = {'id': row['id'], 'email': row['email']}
                     db.execute('DELETE FROM auth_sessions WHERE expires_at<=?', (now,))
-                    old_token = auth.cookie_token(self.headers)
+                    old_token = auth.session_token(self.headers)
                     if old_token:
                         db.execute('DELETE FROM auth_sessions WHERE token_hash=?', (auth.token_hash(old_token),))
                     token = secrets.token_urlsafe(32)
                     db.execute('INSERT INTO auth_sessions VALUES(?,?,?)', (auth.token_hash(token), user['id'], now + auth.SESSION_SECONDS))
                     result, session_cookie = snapshot(db, user), auth.cookie(token)
+                    if self.headers.get('X-App-Client') == 'native':
+                        result['session_token'] = token
                 else:
                     return self.reply(404, {'error': 'Endpoint not found.'})
             self.reply(200, result, session_cookie)
@@ -252,12 +294,28 @@ class Handler(SimpleHTTPRequestHandler):
         except sqlite3.Error:
             self.reply(500, {'error': 'Could not sign in. Please try again.'})
 
+    def legal_page(self, path):
+        content = legal_content()
+        template = (ROOT / 'server/public/legal.html').read_text()
+        raw = template.replace('{{LEGAL_JSON}}', json.dumps(content).replace('<', '\u003c')).replace('{{PAGE}}', 'deletion' if path == '/delete-account' else 'privacy').encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def list_directory(self, path):
+        self.send_error(404)
+        return None
+
     do_POST = mutate
     do_PUT = mutate
     do_DELETE = mutate
 
 
 def make_server(port=8080, db_path=None):
+    if os.environ.get('APP_ENV') == 'production':
+        raise ValueError('Use the production WSGI entrypoint behind HTTPS, not the development server.')
     path = db_path or ROOT / 'server/data/anubhav.sqlite3'
     if Path(path).exists():
         with closing(connect(path)) as source:
