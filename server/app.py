@@ -50,6 +50,12 @@ def initialize(path):
             db.executemany('INSERT INTO settings VALUES(?,?)', [('teacher_name', 'Teacher'), ('school', ''), ('featured_game_id', '1')])
             db.execute('PRAGMA user_version = 1')
         auth.migrate(db)
+        db.executescript('''
+            CREATE TABLE IF NOT EXISTS admin_users (user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE);
+            CREATE TABLE IF NOT EXISTS disabled_users (user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE);
+            CREATE TABLE IF NOT EXISTS admin_audit (id INTEGER PRIMARY KEY, actor_id INTEGER,
+                target_id INTEGER, action TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+        ''')
 
 
 def text(data, key, maximum=200, optional=False):
@@ -115,6 +121,16 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.local_host():
             return self.reply(403, {'error': 'Use the local app address.'})
         path = urlsplit(self.path).path
+        if path in ('/admin', '/admin/'):
+            raw = (ROOT / 'server/public/admin.html').read_bytes()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Content-Length', str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if path == '/api/admin/overview':
+            return self.admin_request()
         if path in ('/privacy', '/delete-account'):
             return self.legal_page(path)
         if path == '/api/legal':
@@ -140,6 +156,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.reply(403, {'error': 'Use the app from this server.'})
         if self.headers.get('Content-Type', '').split(';')[0].strip() != 'application/json':
             return self.reply(415, {'error': 'Send JSON from the app.'})
+        if urlsplit(self.path).path.startswith('/api/admin/'):
+            return self.admin_request()
         if urlsplit(self.path).path.startswith('/api/auth/'):
             return self.authenticate()
         try:
@@ -218,6 +236,53 @@ class Handler(SimpleHTTPRequestHandler):
         except sqlite3.Error:
             self.reply(500, {'error': 'Could not save changes. Please try again.'})
 
+    def admin_request(self):
+        try:
+            with closing(connect(self.server.db_path)) as db, db:
+                user = auth.current_user(db, self.headers)
+                if not user:
+                    return self.reply(401, {'error': 'Please log in.'})
+                if not db.execute('SELECT 1 FROM admin_users WHERE user_id=?', (user['id'],)).fetchone():
+                    return self.reply(403, {'error': 'Administrator access is required.'})
+                path = urlsplit(self.path).path
+                if self.command == 'POST' and path == '/api/admin/user-status':
+                    length = int(self.headers.get('Content-Length', 0))
+                    if not 0 < length <= 4096:
+                        return self.reply(413, {'error': 'Invalid request size.'})
+                    data = json.loads(self.rfile.read(length))
+                    if not isinstance(data, dict) or type(data.get('user_id')) is not int or type(data.get('disabled')) is not bool:
+                        raise ValueError('Provide a user ID and disabled boolean.')
+                    target = data['user_id']
+                    if not db.execute('SELECT 1 FROM users WHERE id=?', (target,)).fetchone():
+                        return self.reply(404, {'error': 'Account not found.'})
+                    if db.execute('SELECT 1 FROM admin_users WHERE user_id=?', (target,)).fetchone():
+                        raise ValueError('Administrator accounts cannot be suspended here.')
+                    if data['disabled']:
+                        db.execute('INSERT OR IGNORE INTO disabled_users VALUES(?)', (target,))
+                        db.execute('DELETE FROM auth_sessions WHERE user_id=?', (target,))
+                    else:
+                        db.execute('DELETE FROM disabled_users WHERE user_id=?', (target,))
+                    db.execute('INSERT INTO admin_audit(actor_id,target_id,action) VALUES(?,?,?)',
+                               (user['id'], target, 'suspend' if data['disabled'] else 'restore'))
+                    return self.reply(200, {'ok': True})
+                if self.command != 'GET' or path != '/api/admin/overview':
+                    return self.reply(404, {'error': 'Admin endpoint not found.'})
+                counts = {table: db.execute(f'SELECT count(*) FROM {table}').fetchone()[0]
+                          for table in ('users', 'games', 'classes', 'sessions')}
+                users = [dict(r) for r in db.execute('''SELECT u.id,u.email,
+                    COALESCE((SELECT value FROM account_settings WHERE user_id=u.id AND key='teacher_name'),'') AS name,
+                    EXISTS(SELECT 1 FROM admin_users WHERE user_id=u.id) AS admin,
+                    EXISTS(SELECT 1 FROM disabled_users WHERE user_id=u.id) AS disabled
+                    FROM users u ORDER BY u.id DESC LIMIT 500''')]
+                activity = [dict(r) for r in db.execute('''SELECT id,user_id,game_title,class_name,status,created_at
+                    FROM sessions ORDER BY id DESC LIMIT 50''')]
+                audit = [dict(r) for r in db.execute('SELECT * FROM admin_audit ORDER BY id DESC LIMIT 50')]
+                return self.reply(200, {'user': user, 'counts': counts, 'users': users, 'activity': activity, 'audit': audit})
+        except (ValueError, TypeError, json.JSONDecodeError):
+            self.reply(400, {'error': 'Invalid admin request.'})
+        except sqlite3.Error:
+            self.reply(500, {'error': 'Could not complete the admin request.'})
+
     def authenticate(self):
         if self.command != 'POST':
             return self.reply(405, {'error': 'Unsupported operation.'})
@@ -275,6 +340,8 @@ class Handler(SimpleHTTPRequestHandler):
                         if not row or not valid:
                             return self.reply(401, {'error': 'Email or password is incorrect.'})
                         user = {'id': row['id'], 'email': row['email']}
+                        if db.execute('SELECT 1 FROM disabled_users WHERE user_id=?', (user['id'],)).fetchone():
+                            return self.reply(403, {'error': 'This account is suspended. Contact the administrator.'})
                     db.execute('DELETE FROM auth_sessions WHERE expires_at<=?', (now,))
                     old_token = auth.session_token(self.headers)
                     if old_token:

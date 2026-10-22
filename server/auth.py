@@ -47,7 +47,8 @@ def current_user(db, headers):
         return None
     row = db.execute('''SELECT users.id,users.email FROM auth_sessions
         JOIN users ON users.id=auth_sessions.user_id
-        WHERE token_hash=? AND expires_at>?''', (token_hash(token), int(time.time()))).fetchone()
+        WHERE token_hash=? AND expires_at>?
+        AND NOT EXISTS(SELECT 1 FROM disabled_users WHERE user_id=users.id)''', (token_hash(token), int(time.time()))).fetchone()
     return dict(row) if row else None
 
 

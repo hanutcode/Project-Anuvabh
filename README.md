@@ -35,6 +35,12 @@ flutter build web --no-wasm-dry-run
 See [LOCAL_SETUP.md](LOCAL_SETUP.md) for local tooling, database backups, API details
 and session behavior.
 
+## Web administration
+
+Open `/admin` for the browser-based management dashboard. Grant access to an
+existing account with `python3 server/manage_admin.py your-email@example.com`.
+See [server/ADMIN.md](server/ADMIN.md) for setup and access controls.
+
 ## Hosting
 
 The app requires its Python API and a persistent SQLite database. GitHub Pages alone

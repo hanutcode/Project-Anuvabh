@@ -175,6 +175,29 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(error.exception.code, 403)
         error.exception.close()
 
+    def test_admin_permissions_suspension_and_restore(self):
+        anonymous = build_opener(HTTPCookieProcessor(CookieJar()))
+        self.request(path='admin/overview', client=anonymous, status=401)
+        self.request(path='admin/overview', status=403)
+        with sqlite3.connect(self.path) as db:
+            admin_id = db.execute('SELECT id FROM users WHERE email=?', ('teacher@example.test',)).fetchone()[0]
+            db.execute('INSERT INTO admin_users VALUES(?)', (admin_id,))
+        overview = self.request(path='admin/overview')
+        self.assertEqual(overview['counts']['users'], 1)
+        self.assertNotIn('password_hash', overview['users'][0])
+        other = build_opener(HTTPCookieProcessor(CookieJar()))
+        user = self.request('POST', 'auth/register', dict(name='Other', email='other@example.test', password='654321'), client=other)['user']
+        self.request('POST', 'admin/user-status', dict(user_id=admin_id, disabled=True), status=400)
+        self.request('POST', 'admin/user-status', dict(user_id=user['id'], disabled=True), client=other, status=403)
+        self.request('POST', 'admin/user-status', dict(user_id=user['id'], disabled=True))
+        self.request(client=other, status=401)
+        self.request('POST', 'auth/login', dict(email='other@example.test', password='654321'), client=other, status=403)
+        self.request('POST', 'admin/user-status', dict(user_id=user['id'], disabled=False))
+        self.request('POST', 'auth/login', dict(email='other@example.test', password='654321'), client=other)
+        self.assertEqual(len(self.request(path='admin/overview')['audit']), 2)
+        with self.opener.open(self.base + '/admin') as response:
+            self.assertIn(b'Administrator login', response.read())
+
     def test_foreign_origin_rejected(self):
         request = Request(self.base + '/api/classes', method='POST', data=b'{"name":"Class","students":20}',
                           headers={'Origin': 'https://example.com', 'Content-Type': 'application/json'})
